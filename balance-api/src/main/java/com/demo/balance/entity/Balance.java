@@ -1,39 +1,30 @@
 package com.demo.balance.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Getter
 @Setter
-@Entity
-@Table(name = "balance")
+@Table("balance")
 public class Balance {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "account_id", nullable = false)
+    @Column("account_id")
     private Long accountId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private BalanceType type;
+    // guardado como texto (VARCHAR na tabela); o BalanceType vive só na borda (mapper/DTO)
+    private String type;
 
-    @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal amount;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column("updated_at")
     private LocalDateTime updatedAt;
 }

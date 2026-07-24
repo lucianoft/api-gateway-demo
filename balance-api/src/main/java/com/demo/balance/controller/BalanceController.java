@@ -1,7 +1,6 @@
 package com.demo.balance.controller;
 
 import com.demo.balance.dto.AccountBalanceResponse;
-import com.demo.balance.entity.Balance;
 import com.demo.balance.exception.BalanceNotFoundException;
 import com.demo.balance.mapper.BalanceMapper;
 import com.demo.balance.service.BalanceService;
@@ -13,8 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/balances")
@@ -25,9 +23,9 @@ public class BalanceController {
     private final BalanceMapper balanceMapper;
 
     @GetMapping("/{accountId}")
-    public ResponseEntity<AccountBalanceResponse> buscar(@PathVariable Long accountId) {
-        List<Balance> balances = balanceService.buscarPorConta(accountId);
-        return ResponseEntity.ok(balanceMapper.toResponse(accountId, balances));
+    public Mono<ResponseEntity<AccountBalanceResponse>> buscar(@PathVariable Long accountId) {
+        return balanceService.buscarPorConta(accountId)
+                .map(balances -> ResponseEntity.ok(balanceMapper.toResponse(accountId, balances)));
     }
 
     @ExceptionHandler(BalanceNotFoundException.class)

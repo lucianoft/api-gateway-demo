@@ -41,7 +41,7 @@ class BalanceMapperTest {
     private Balance novoBalance(Long accountId, BalanceType type, BigDecimal amount) {
         Balance balance = new Balance();
         balance.setAccountId(accountId);
-        balance.setType(type);
+        balance.setType(type.name());
         balance.setAmount(amount);
         balance.setUpdatedAt(LocalDateTime.now());
         return balance;

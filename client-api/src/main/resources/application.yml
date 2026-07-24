@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: client-api
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 3000
+            read-timeout: 5000
 
 app:
   gateway-api:

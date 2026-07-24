@@ -14,7 +14,7 @@ comunicação é só HTTP.
 ```mermaid
 flowchart LR
     subgraph "Camada 1 - Fachada"
-        C[client-api<br/>Spring MVC :8082]
+        C[client-api<br/>Spring MVC :8082<br/>Feign client]
     end
 
     subgraph "Camada 2 - Gateway"
@@ -23,23 +23,25 @@ flowchart LR
     end
 
     subgraph "Camada 3 - Microsserviço"
-        B[balance-api<br/>Spring MVC + JPA :8081]
+        B[balance-api<br/>Spring WebFlux + R2DBC :8081]
     end
 
     DB[(PostgreSQL<br/>balance)]
 
-    C -- "GET /balances/{accountId}<br/>RestClient" --> G
+    C -- "GET /balances/{accountId}<br/>GatewayBalanceClient (Feign)" --> G
     G -. "GlobalFilter loga<br/>entrada/saída" .- F
     G -- "GET /balances/{accountId}<br/>StripPrefix=1" --> B
-    B --> DB
+    B -- "R2DBC (não bloqueante)" --> DB
 ```
 
 ## Fluxo de uma requisição
 
 1. Um cliente HTTP chama `GET /balances/{accountId}` no **client-api** (porta 8082).
-2. `client-api` é uma fachada REST pura: repassa a chamada via `RestClient` para o
-   **gateway-api**, em `GET /api/balances/{accountId}`, e devolve o status/corpo da
-   resposta tal como recebeu (sem lógica de negócio própria).
+2. `client-api` é uma fachada REST pura: repassa a chamada para o **gateway-api** através
+   de um client Feign declarativo (`GatewayBalanceClient`, interface anotada com
+   `@FeignClient`, sem implementação escrita à mão) e devolve o status/corpo da resposta
+   tal como recebeu (sem lógica de negócio própria). Erros HTTP do gateway chegam como
+   `FeignException` e são traduzidos de volta para o mesmo status no `@ExceptionHandler`.
 3. `gateway-api` casa a rota pelo predicado `Path=/api/balances/**` e aplica, nessa ordem,
    os filtros declarados na rota: `StripPrefix=1` (remove o `/api`) e `AuthTokenFilter`
    (simula validação de token — só loga se o header `Authorization` veio ou não, sempre
@@ -47,16 +49,17 @@ flowchart LR
 4. Independente da rota, o `LoggingGlobalFilter` (filtro global, roda em todas as rotas)
    loga a requisição de entrada; ao concluir a chamada, loga o status de resposta (ou o
    erro) e o tempo total gasto.
-5. `balance-api` busca todos os registros de saldo da conta no Postgres e responde com a
-   lista de saldos por tipo. Se a conta não tiver nenhum registro, responde `404`.
+5. `balance-api` busca todos os registros de saldo da conta no Postgres via R2DBC (driver
+   não bloqueante) e responde, de forma reativa (`Mono`/`Flux`), com a lista de saldos por
+   tipo. Se a conta não tiver nenhum registro, responde `404`.
 
 ## Serviços
 
 | Serviço | Porta | Papel | Stack |
 |---|---|---|---|
-| client-api | 8082 | Fachada REST para o cliente final; sem regra de negócio, só repassa para o gateway | Spring MVC, `RestClient` |
+| client-api | 8082 | Fachada REST para o cliente final; sem regra de negócio, só repassa para o gateway | Spring MVC, Spring Cloud OpenFeign |
 | gateway-api | 8080 | Roteamento HTTP + filtro global de log | Spring Cloud Gateway (WebFlux) |
-| balance-api | 8081 | Consulta de saldo por conta (somente leitura) | Spring MVC, Spring Data JPA, PostgreSQL |
+| balance-api | 8081 | Consulta de saldo por conta (somente leitura) | Spring WebFlux, Spring Data R2DBC, PostgreSQL |
 | postgres | 5432 | Banco único do balance-api | PostgreSQL 16 |
 
 ## Endpoints
@@ -113,6 +116,17 @@ A conta `1` já vem populada via seed (`CONTA` = 1000.00, `LIMITE_ESPECIAL` = 50
   algumas rotas precisarem de autenticação e outras não.
 - **Somente leitura no balance-api** — sem métodos de escrita expostos; o serviço existe
   só para consulta, o que simplifica o design (sem lock otimista, sem `@Version`).
+- **balance-api reativo (WebFlux + R2DBC)** — controller e repositório não bloqueantes
+  (`Mono`/`Flux`). Escolha deliberada de estudo: WebFlux só faz sentido de ponta a ponta
+  se o acesso a dado também for não bloqueante, por isso JPA foi trocado por R2DBC junto
+  com a troca de `spring-boot-starter-web` por `-webflux` (JPA bloquearia a thread do
+  event loop de qualquer forma). O enum `BalanceType` só existe na borda (mapper/DTO); a
+  entidade guarda `type` como `String`, porque o driver R2DBC do Postgres não converte
+  enum Java para coluna automaticamente sem um `Converter` customizado.
+- **client-api com Feign** — `GatewayBalanceClient` é só uma interface anotada com
+  `@FeignClient`; o Spring Cloud OpenFeign gera a implementação em tempo de execução.
+  Troca direta do `RestClient` manual por uma declaração de contrato HTTP — o gateway
+  nem percebe a diferença, porque o transporte continua sendo HTTP puro dos dois lados.
 
 ## Como rodar
 
@@ -147,10 +161,14 @@ docker compose down --rmi local -v
 Cada serviço tem testes unitários (JUnit 5 + Mockito + AssertJ/StepVerifier), sem contexto
 Spring nem Testcontainers:
 
-- `balance-api`: mapper, service e controller (`MockMvc` standalone).
+- `balance-api`: mapper, service (`StepVerifier` sobre `Mono`/`Flux` mockados) e
+  controller (`WebTestClient.bindToController`, equivalente reativo do `MockMvc`
+  standalone).
 - `gateway-api`: `LoggingGlobalFilterTest` (`StepVerifier` sobre o `GatewayFilterChain`
   mockado — sucesso, erro e ordem do filtro) e `AuthTokenFilterGatewayFilterFactoryTest`
   (com e sem header `Authorization`, sempre autoriza).
+- `client-api`: `BalanceControllerTest` (`MockMvc` standalone, `GatewayBalanceClient`
+  mockado) — sucesso e erro simulado com `FeignException.errorStatus(...)`.
 
 ## Limitações conhecidas
 

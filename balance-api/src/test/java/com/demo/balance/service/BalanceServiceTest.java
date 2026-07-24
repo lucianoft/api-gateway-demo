@@ -9,13 +9,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,27 +32,32 @@ class BalanceServiceTest {
     void deveRetornarSaldosQuandoContaExiste() {
         Balance conta = novoBalance(1L, BalanceType.CONTA, new BigDecimal("1000.00"));
         Balance limiteEspecial = novoBalance(1L, BalanceType.LIMITE_ESPECIAL, new BigDecimal("500.00"));
-        when(balanceRepository.findByAccountId(1L)).thenReturn(List.of(conta, limiteEspecial));
+        when(balanceRepository.findByAccountId(1L)).thenReturn(Flux.just(conta, limiteEspecial));
 
-        List<Balance> resultado = balanceService.buscarPorConta(1L);
+        StepVerifier.create(balanceService.buscarPorConta(1L))
+                .expectNext(List.of(conta, limiteEspecial))
+                .verifyComplete();
 
-        assertThat(resultado).containsExactly(conta, limiteEspecial);
         verify(balanceRepository).findByAccountId(1L);
     }
 
     @Test
     void deveLancarExcecaoQuandoContaNaoTemSaldos() {
-        when(balanceRepository.findByAccountId(999L)).thenReturn(List.of());
+        when(balanceRepository.findByAccountId(999L)).thenReturn(Flux.empty());
 
-        assertThatThrownBy(() -> balanceService.buscarPorConta(999L))
-                .isInstanceOf(BalanceNotFoundException.class)
-                .hasMessageContaining("999");
+        StepVerifier.create(balanceService.buscarPorConta(999L))
+                .expectErrorSatisfies(erro -> {
+                    org.assertj.core.api.Assertions.assertThat(erro)
+                            .isInstanceOf(BalanceNotFoundException.class)
+                            .hasMessageContaining("999");
+                })
+                .verify();
     }
 
     private Balance novoBalance(Long accountId, BalanceType type, BigDecimal amount) {
         Balance balance = new Balance();
         balance.setAccountId(accountId);
-        balance.setType(type);
+        balance.setType(type.name());
         balance.setAmount(amount);
         balance.setUpdatedAt(LocalDateTime.now());
         return balance;

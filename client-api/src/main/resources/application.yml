@@ -1,0 +1,20 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: client-api
+
+app:
+  gateway-api:
+    base-url: http://${GATEWAY_API_HOST:localhost}:8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.demo.client: DEBUG

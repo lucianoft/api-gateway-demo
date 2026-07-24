@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: balance
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./balance-api/db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d balance"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  balance-api:
+    build: ./balance-api
+    ports:
+      - "8081:8081"
+    environment:
+      DB_HOST: postgres
+      DB_NAME: balance
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway-api:
+    build: ./gateway-api
+    ports:
+      - "8080:8080"
+    environment:
+      BALANCE_API_HOST: balance-api
+    depends_on:
+      - balance-api
+
+  client-api:
+    build: ./client-api
+    ports:
+      - "8082:8082"
+    environment:
+      GATEWAY_API_HOST: gateway-api
+    depends_on:
+      - gateway-api
